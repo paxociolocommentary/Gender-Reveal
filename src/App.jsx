@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const REVEAL_CODES = {
   '4475': 'girl',
@@ -40,6 +40,39 @@ const PHASES = {
   REVEAL: 'reveal',
 }
 
+const CONFETTI = Array.from({ length: 56 }, (_, index) => ({
+  delay: `${(index % 12) * 70}ms`,
+  duration: `${2200 + (index % 7) * 170}ms`,
+  left: `${(index * 37) % 101}%`,
+  rotation: `${(index * 47) % 360}deg`,
+  size: `${8 + (index % 4) * 3}px`,
+}))
+
+function playCelebration(audioContext) {
+  if (!audioContext) return
+
+  const now = audioContext.currentTime
+  ;[
+    [523.25, 0],
+    [659.25, 0.14],
+    [783.99, 0.28],
+    [1046.5, 0.48],
+  ].forEach(([frequency, startOffset]) => {
+    const oscillator = audioContext.createOscillator()
+    const gain = audioContext.createGain()
+    const startTime = now + startOffset
+
+    oscillator.type = 'triangle'
+    oscillator.frequency.setValueAtTime(frequency, startTime)
+    gain.gain.setValueAtTime(0.0001, startTime)
+    gain.gain.exponentialRampToValueAtTime(0.16, startTime + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.34)
+    oscillator.connect(gain).connect(audioContext.destination)
+    oscillator.start(startTime)
+    oscillator.stop(startTime + 0.35)
+  })
+}
+
 function PrimaryButton({ children, onClick }) {
   return (
     <button
@@ -58,6 +91,8 @@ function App() {
   const [gender, setGender] = useState(null)
   const [sequenceIndex, setSequenceIndex] = useState(0)
   const [countdown, setCountdown] = useState(10)
+  const audioContextRef = useRef(null)
+  const hasCelebratedRef = useRef(false)
 
   const hypeMessage = HYPE_MESSAGES[sequenceIndex]
   const revealColor = gender === 'girl' ? '#ffafcc' : '#a2d2ff'
@@ -103,6 +138,13 @@ function App() {
     return () => window.clearInterval(timer)
   }, [phase])
 
+  useEffect(() => {
+    if (phase !== PHASES.REVEAL || hasCelebratedRef.current) return
+
+    hasCelebratedRef.current = true
+    playCelebration(audioContextRef.current)
+  }, [phase])
+
   function updateCode(value) {
     const digitsOnly = value.replace(/\D/g, '').slice(0, 4)
     setCode(digitsOnly)
@@ -115,6 +157,12 @@ function App() {
   }
 
   function startCountdown() {
+    const AudioContext = window.AudioContext || window.webkitAudioContext
+    if (AudioContext && !audioContextRef.current) {
+      audioContextRef.current = new AudioContext()
+    }
+    audioContextRef.current?.resume()
+    hasCelebratedRef.current = false
     setCountdown(10)
     setPhase(PHASES.COUNTDOWN)
   }
@@ -135,6 +183,7 @@ function App() {
             <label className="sr-only" htmlFor="reveal-code">Four-digit reveal code</label>
             <input
               id="reveal-code"
+              type="password"
               value={code}
               onChange={(event) => updateCode(event.target.value)}
               inputMode="numeric"
@@ -185,6 +234,22 @@ function App() {
 
       {phase === PHASES.REVEAL && (
         <section className="relative z-10 flex min-h-screen w-full items-center justify-center px-6 text-center">
+          <div className="confetti pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            {CONFETTI.map((piece, index) => (
+              <span
+                key={index}
+                className="confetti-piece"
+                style={{
+                  '--confetti-delay': piece.delay,
+                  '--confetti-duration': piece.duration,
+                  '--confetti-left': piece.left,
+                  '--confetti-rotation': piece.rotation,
+                  '--confetti-size': piece.size,
+                  '--confetti-color': index % 3 === 0 ? '#fcf6bd' : index % 2 === 0 ? '#201c30' : revealColor,
+                }}
+              />
+            ))}
+          </div>
           <div className="animate-[reveal-pop_950ms_cubic-bezier(.16,1,.3,1)_both]">
             <p className="font-sans text-xs font-extrabold uppercase tracking-[0.3em]">It&apos;s official</p>
             <h2 className="mt-5 font-display text-6xl leading-[0.82] sm:text-8xl lg:text-9xl">IT IS A<br />{gender === 'girl' ? 'GIRL' : 'BOY'}</h2>
